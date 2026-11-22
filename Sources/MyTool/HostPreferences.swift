@@ -36,10 +36,12 @@ final class HostPreferences: ObservableObject {
         appearanceUpdatePending = true
         // Changing activation policy can run a nested AppKit event loop. Wait until
         // the SwiftUI binding setter and the switch's tracking have returned.
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.appearanceUpdatePending = false
-            self.applyAppearance?()
+        RunLoop.main.perform(inModes: [.default]) { [weak self] in
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.appearanceUpdatePending = false
+                self.applyAppearance?()
+            }
         }
     }
 

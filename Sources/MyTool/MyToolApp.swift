@@ -145,33 +145,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func applyAppearance() {
-        let visible = NSApp.windows.filter(\.isVisible)
-        let key = NSApp.keyWindow
-        let wasActive = NSApp.isActive
-        let policy: NSApplication.ActivationPolicy = preferences.showDockIcon ? .regular : .accessory
-        if NSApp.activationPolicy() != policy {
-            if NSApp.setActivationPolicy(policy) {
-                // Let AppKit finish the policy transition before restoring focus.
-                DispatchQueue.main.async {
-                    guard NSApp.activationPolicy() == policy else { return }
-                    for w in visible { w.orderFrontRegardless() }
-                    key?.makeKeyAndOrderFront(nil)
-                    if wasActive { NSApp.activate(ignoringOtherApps: true) }
-                }
-            } else {
-                preferences.error = "无法切换 Dock 图标，请重试。"
-            }
-        }
+        applyDockVisibility()
         if preferences.showMenuBarIcon {
-            if statusItem == nil {
-                let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-                let image = NSImage(systemSymbolName: "square.grid.2x2", accessibilityDescription: "MyTool")
-                image?.isTemplate = true; item.button?.image = image; item.button?.toolTip = "MyTool"
-                let menu = NSMenu(); menu.delegate = self; menu.autoenablesItems = false
-                item.menu = menu; statusItem = item
-            }
-        } else if let item = statusItem { NSStatusBar.system.removeStatusItem(item); statusItem = nil }
-        updateStatusIndicator(registry.statuses)
+            guard statusItem == nil else { return }
+            let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+            let menu = NSMenu(); menu.delegate = self; menu.autoenablesItems = false
+            item.menu = menu; statusItem = item
+            updateStatusIndicator(registry.statuses)
+        } else if let item = statusItem {
+            NSStatusBar.system.removeStatusItem(item)
+            statusItem = nil
+        }
+    }
+
+    private func applyDockVisibility() {
+        let policy: NSApplication.ActivationPolicy = preferences.showDockIcon ? .regular : .accessory
+        guard NSApp.activationPolicy() != policy else { return }
+        let key = NSApp.isActive ? NSApp.keyWindow : nil
+        guard NSApp.setActivationPolicy(policy) else {
+            preferences.error = "无法切换 Dock 图标，请重试。"
+            return
+        }
+        // AppKit reorders its own windows during the transition. Restore only
+        // the previous key window if AppKit left it visible and focus was lost.
+        DispatchQueue.main.async { [weak key] in
+            guard NSApp.activationPolicy() == policy, !NSApp.isHidden,
+                  let key, key.isVisible, !key.isMiniaturized else { return }
+            if NSApp.keyWindow == nil { key.makeKey() }
+            if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
+        }
     }
 
     private func updateStatusIndicator(_ statuses: [String: ToolStatus]) {
